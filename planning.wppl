@@ -1,0 +1,121 @@
+// ROW PLAYER SIM
+
+// softmax planning model. Row player is going to make a 
+// move based on what it thinks col player is going to do 
+// based on what row player is going to do...
+
+// row player simulates col player moving uniformly. Then he simulates
+// what he should do based on that. Repeat this process some number of times
+
+var mat = editor.get("mat")
+var makeRowStrategy = function(alpha, d) {
+  var row = dp.cache(function(row_prior, col_prior, depth) {
+    var alpha = 2
+    return Infer({ model() {
+      var rowMove = sample(row_prior);
+      if (depth === 0) {
+        return rowMove
+      } else {
+        var eu = expectation(Infer({ model() {
+          var colMove = sample(col(row_prior, col_prior, depth-1));
+          return mat[rowMove][colMove]
+        }}))
+        factor(alpha*eu);
+        return rowMove;
+      }
+    }});
+  });
+
+  var col = dp.cache(function(row_prior, col_prior, depth) {
+    var alpha = 2
+    return Infer({ model() {
+      var colMove = sample(row_prior);
+      var eu = expectation(Infer({ model() {
+        var rowMove = sample(row(row_prior, col_prior, depth));
+        return mat[rowMove][colMove]
+      }}))
+      factor(-alpha*eu);
+      return colMove; 
+    }});
+  });
+  return function(r, c) {row(r, c, d)}
+}
+  
+editor.put("makeRowStrategy", makeRowStrategy)
+
+
+
+// COL PLAYER SIM
+
+// softmax planning model. Row player is going to make a 
+// move based on what it thinks col player is going to do 
+// based on what row player is going to do...
+
+// row player simulates col player moving uniformly. Then he simulates
+// what he should do based on that. Repeat this process some number of times
+
+var mat = editor.get("mat")
+var makeColStrategy = function(alpha, d) {
+  // makeRowStrategy returns row. Initialized with alpha and depth d
+  var row = dp.cache(function(row_prior, col_prior, depth) {
+    return Infer({ model() {
+      var rowMove = sample(row_prior);
+      var eu = expectation(Infer({ model() {
+        var colMove = sample(col(row_prior, col_prior, depth-1));
+        return mat[rowMove][colMove]
+      }}))
+      factor(alpha*eu);
+      return rowMove;
+    }});
+  });
+
+  var col = dp.cache(function(row_prior, col_prior, depth) {
+    return Infer({ model() {
+      var colMove = sample(row_prior);
+      if (depth === 0) {
+        return colMove;
+      } else {
+        var eu = expectation(Infer({ model() {
+          var rowMove = sample(row(row_prior, col_prior, depth));
+          return mat[rowMove][colMove]
+        }}))
+        factor(-alpha*eu);
+        return colMove; 
+      }
+    }});
+  });
+  return function(r, c) {col(r, c, d)}
+}
+editor.put("makeColStrategy", makeColStrategy)
+
+
+// var mat = editor.get("mat")
+var rowPrior = editor.get("rowPrior")
+var colPrior = editor.get("colPrior")
+var makeRowStrategy= editor.get("makeRowStrategy")
+var makeColStrategy= editor.get("makeColStrategy")
+
+
+var col = makeColStrategy(1, 1)
+viz(col(rowPrior(), colPrior()))
+
+
+
+// EVALUATE PERFORMANCE
+
+// takes a row strategy and a column strategy and makes them compete
+var mat = editor.get("mat")
+var rowPrior = editor.get("rowPrior")
+var colPrior = editor.get("colPrior")
+var makeRowStrategy= editor.get("makeRowStrategy")
+var makeColStrategy= editor.get("makeColStrategy")
+
+var evaluate = Infer(function() {
+  var row = makeRowStrategy(1, 4)
+  var col = makeRowStrategy(1, 1)
+  var r = sample(row(rowPrior(), colPrior()))
+  var c = sample(col(rowPrior(), colPrior()))
+  return mat[r][c]
+})
+print(expectation(evaluate))
+viz(evaluate)

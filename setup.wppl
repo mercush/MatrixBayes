@@ -1,0 +1,30 @@
+var mat2 = [
+  [2, -1, -5],
+  [1, 0, 3], 
+  [-2, -1, 4]
+]
+
+var mat = [
+  [2,	-4],
+  [-2,	4]
+]
+
+var rowPrior = function(){
+  // this maybe should just be a uniform
+  var len = mat.length
+  var ps = repeat(len, function(){1})
+  var vs = mapData({data: ps}, function(x, idx){idx})
+  return Categorical({vs: vs, ps: ps})
+}
+
+var colPrior = function(){
+  // this maybe shuould just be a uniform
+  var len = mat[0].length
+  var ps = repeat(len, function(){1})
+  var vs = mapData({data: ps}, function(x, idx){idx})
+  return Categorical({vs: vs, ps: ps})
+}
+
+editor.put("mat", mat)
+editor.put("rowPrior", rowPrior)
+editor.put("colPrior", colPrior)

@@ -1,0 +1,57 @@
+// LEARNING
+
+// play a sequence of n rounds and try to predict what the player is 
+// going to pick based on what they did in the past
+// update prior with a factor
+
+
+// This appears to be unhelpful for the 2x2 case. Why? If you predict
+// that your opponent is going to pick according to the same distribution
+// again then you aren't adjusting for the times he swithches. 
+var mat = editor.get("mat")
+var makeRowStrategy= editor.get("makeRowStrategy")
+var makeColStrategy= editor.get("makeColStrategy")
+var simulate = function(n) {
+  return function() {
+    var rowPrior = function(){
+      var len = mat.length
+      var ps = dirichlet(ones([len, 1]))
+      var vs = mapData({data: repeat(len, function(){1})}, function(x, idx){idx})
+      return Categorical({vs: vs, ps: ps})
+    }
+    var colPrior = function(){
+      var len = mat[0].length
+      var ps = dirichlet(ones([len, 1]))
+      var vs = mapData({data: repeat(len, function(){1})}, function(x, idx){idx})
+      return Categorical({vs: vs, ps: ps})
+    }  
+    var row = makeRowStrategy(4, 1)
+    var col = makeColStrategy(4, 2)
+
+    var simulate_n = function(n, val, sequenceSoFar) {
+      // recursion
+      if (n == 0) {
+        return val //sequenceSoFar
+      } else {
+        var r = sample(row(rowPrior(), colPrior()))
+        var c = sample(col(rowPrior(), colPrior()))
+
+        // update the value
+        var newval = val + mat[r][c]
+        var sequence = {
+          row: sequenceSoFar.row.concat(r), 
+          col: sequenceSoFar.col.concat(c)
+        }
+        // condition on observed
+        observe(rowPrior(), r)
+        observe(colPrior(), c)
+        return simulate_n(n-1, newval, sequence)
+      }
+    }
+    var seq = simulate_n(n, 0, {row: [], col: []})
+    return seq
+  }
+}
+
+var seq = Infer({method: "MCMC", samples: 100000}, simulate(4))
+editor.put("seq", seq)
