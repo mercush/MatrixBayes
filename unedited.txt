@@ -1,0 +1,228 @@
+// ---- CELL 1 ----
+
+var mat2 = [
+  [2, -1, -5],
+  [1, 0, 3], 
+  [-2, -1, 4]
+]
+
+var mat = [
+  [2,	-4],
+  [-2,	4]
+]
+
+var rowPrior = function(){
+  // this maybe should just be a uniform
+  var len = mat.length
+  var ps = repeat(len, function(){1})
+  var vs = mapData({data: ps}, function(x, idx){idx})
+  return Categorical({vs: vs, ps: ps})
+}
+
+var colPrior = function(){
+  // this maybe shuould just be a uniform
+  var len = mat[0].length
+  var ps = repeat(len, function(){1})
+  var vs = mapData({data: ps}, function(x, idx){idx})
+  return Categorical({vs: vs, ps: ps})
+}
+
+editor.put("mat", mat)
+editor.put("rowPrior", rowPrior)
+editor.put("colPrior", colPrior)
+
+// ---- CELL 2 ----
+
+// ROW PLAYER SIM
+
+// softmax planning model. Row player is going to make a 
+// move based on what it thinks col player is going to do 
+// based on what row player is going to do...
+
+// row player simulates col player moving uniformly. Then he simulates
+// what he should do based on that. Repeat this process some number of times
+
+var mat = editor.get("mat")
+var makeRowStrategy = function(alpha, d) {
+  var row = dp.cache(function(row_prior, col_prior, depth) {
+    var alpha = 2
+    return Infer({ model() {
+      var rowMove = sample(row_prior);
+      if (depth === 0) {
+        return rowMove
+      } else {
+        var eu = expectation(Infer({ model() {
+          var colMove = sample(col(row_prior, col_prior, depth-1));
+          return mat[rowMove][colMove]
+        }}))
+        factor(alpha*eu);
+        return rowMove;
+      }
+    }});
+  });
+
+  var col = dp.cache(function(row_prior, col_prior, depth) {
+    var alpha = 2
+    return Infer({ model() {
+      var colMove = sample(col_prior);
+      var eu = expectation(Infer({ model() {
+        var rowMove = sample(row(row_prior, col_prior, depth));
+        return mat[rowMove][colMove]
+      }}))
+      factor(-alpha*eu);
+      return colMove; 
+    }});
+  });
+  return function(r, c) {row(r, c, d)}
+}
+  
+editor.put("makeRowStrategy", makeRowStrategy)
+
+// ---- CELL 3 ----
+
+// COL PLAYER SIM
+
+// softmax planning model. Row player is going to make a 
+// move based on what it thinks col player is going to do 
+// based on what row player is going to do...
+
+// row player simulates col player moving uniformly. Then he simulates
+// what he should do based on that. Repeat this process some number of times
+
+var mat = editor.get("mat")
+var makeColStrategy = function(alpha, d) {
+  // makeRowStrategy returns row. Initialized with alpha and depth d
+  var row = dp.cache(function(row_prior, col_prior, depth) {
+    return Infer({ model() {
+      var rowMove = sample(row_prior);
+      var eu = expectation(Infer({ model() {
+        var colMove = sample(col(row_prior, col_prior, depth-1));
+        return mat[rowMove][colMove]
+      }}))
+      factor(alpha*eu);
+      return rowMove;
+    }});
+  });
+
+  var col = dp.cache(function(row_prior, col_prior, depth) {
+    return Infer({ model() {
+      var colMove = sample(col_prior);
+      if (depth === 0) {
+        return colMove;
+      } else {
+        var eu = expectation(Infer({ model() {
+          var rowMove = sample(row(row_prior, col_prior, depth));
+          return mat[rowMove][colMove]
+        }}))
+        factor(-alpha*eu);
+        return colMove; 
+      }
+    }});
+  });
+  return function(r, c) {col(r, c, d)}
+}
+editor.put("makeColStrategy", makeColStrategy)
+
+// ---- CELL 4 ----
+
+// var mat = editor.get("mat")
+var rowPrior = editor.get("rowPrior")
+var colPrior = editor.get("colPrior")
+var makeRowStrategy= editor.get("makeRowStrategy")
+var makeColStrategy= editor.get("makeColStrategy")
+
+
+var row = makeRowStrategy(1, 3)
+viz(row(rowPrior(), colPrior()))
+
+var col = makeColStrategy(1, 0)
+viz(col(rowPrior(), colPrior()))
+
+// ---- CELL 5 ----
+
+// EVALUATE PERFORMANCE
+
+// takes a row strategy and a column strategy and makes them compete
+var mat = editor.get("mat")
+var rowPrior = editor.get("rowPrior")
+var colPrior = editor.get("colPrior")
+var makeRowStrategy= editor.get("makeRowStrategy")
+var makeColStrategy= editor.get("makeColStrategy")
+
+var evaluate = Infer(function() {
+  var row = makeRowStrategy(1,0)
+  var col = makeColStrategy(1,0)
+  var r = sample(row(rowPrior(), colPrior()))
+  var c = sample(col(rowPrior(), colPrior()))
+  return mat[r][c]
+})
+print(expectation(evaluate))
+viz(evaluate)
+
+// ---- CELL 6 ----
+
+// LEARNING
+
+// play a sequence of n rounds and try to predict what the player is 
+// going to pick based on what they did in the past
+// update prior with a factor
+
+
+// This appears to be unhelpful for the 2x2 case. Why? If you predict
+// that your opponent is going to pick according to the same distribution
+// again then you aren't adjusting for the times he swithches. 
+var mat = editor.get("mat")
+var makeRowStrategy= editor.get("makeRowStrategy")
+var makeColStrategy= editor.get("makeColStrategy")
+var simulate = function(n) {
+  return function() {
+    var rowPrior = function(){
+      var len = mat.length
+      var ps = dirichlet(ones([len, 1]))
+      var vs = mapData({data: repeat(len, function(){1})}, function(x, idx){idx})
+      return Categorical({vs: vs, ps: ps})
+    }
+    var colPrior = function(){
+      var len = mat[0].length
+      var ps = dirichlet(ones([len, 1]))
+      var vs = mapData({data: repeat(len, function(){1})}, function(x, idx){idx})
+      return Categorical({vs: vs, ps: ps})
+    }
+    var row = makeRowStrategy(1, 1)
+    var col = makeColStrategy(1, 1)
+
+    var simulate_n = function(n, val, sequenceSoFar) {
+      // recursion
+      if (n == 0) {
+        return val
+      } else {
+        var r = sample(row(rowPrior(), colPrior()))
+        var c = sample(col(rowPrior(), colPrior()))
+
+        // update the value
+        var newval = val + mat[r][c]
+        var sequence = {
+          row: sequenceSoFar.row.concat(r), 
+          col: sequenceSoFar.col.concat(c)
+        }
+        // condition on observed
+        observe(rowPrior(), r)
+//         observe(colPrior(), c)
+        return simulate_n(n-1, newval, sequence)
+      }
+    }
+    var seq = simulate_n(n, 0, {row: [], col: []})
+    return seq
+  }
+}
+
+var seq = Infer({method: "MCMC", samples: 100000}, simulate(10))
+editor.put("seq", seq)
+
+// ---- CELL 7 ----
+
+var seq = editor.get("seq")
+print(expectation(seq))
+seq
+
+
